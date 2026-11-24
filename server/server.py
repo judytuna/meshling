@@ -404,7 +404,9 @@ class Meshling:
         hint = (f" They asked you before about: {notes[-1]}. Bring that up."
                 if notes and not wx else "")
         if wx:
-            hint = " Give the real Hayward numbers from WEATHER, with F after the temperature."
+            hint = (" Say the weather like an uncle, in your own words, not a list: one or two"
+                    " real temperatures from WEATHER (with F), the sky, then nag about a"
+                    " jacket or umbrella.")
         elif fact != "none":
             hint += " Work in the FACT."
         user = (f"{clean_text}\n\n(Reply in one or two short sentences, under "
