@@ -6,7 +6,8 @@ message here and sends back whatever Meshling says.
 
   POST /message   {"sender": "judytuna", "channel": "#meshling", "text": "meshling, ..."}
                   header X-Meshling-Key: <contents of /app/data/secret>
-                  -> {"reply": "...", "source": "llm" | "offline" | "safety"}
+                  -> {"reply": "...", "source": "llm" | "offline" | "safety"
+                                          | "lookup" | "weather"}
                   -> {"reply": null, "reason": "..."} when Meshling stays quiet
   GET  /health    -> {"ok": true, "llm": "connected" | "not connected", ...}
 
@@ -14,6 +15,8 @@ Standard library only. Files it reads, all in this folder:
   persona.txt   the system prompt; {sender} {notes} {signoff} {text} are filled in
   signoffs.txt  one sign-off per line, one picked at random per reply
   offline.txt   lines used when the LLM can't be reached
+  facts.txt     turkey, horse and truck lore, one is sometimes worked in
+  tools.py      Morse, ham lingo and help (no LLM) and real Hayward weather
   config.json   optional overrides for DEFAULTS below
 Data lives in data/: meshling.db (per-sender notes) and secret (shared key).
 """
@@ -34,6 +37,8 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import tools
+
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(APP_DIR, "data")
 
@@ -52,6 +57,7 @@ DEFAULTS = {
     "llm_timeout": 25,
     "temperature": 0.9,
     "max_tokens": 90,
+    "fact_chance": 0.3,         # how often a turkey/horse/truck fact is worked in
 }
 
 
@@ -124,7 +130,11 @@ def fit(body, signoff, max_len, known_signoffs=()):
         for s in endings:
             core = s.rstrip(" .!")
             if core and b.lower().endswith(core.lower()):
-                body = b[: len(b) - len(core)].rstrip()
+                before = b[: len(b) - len(core)].rstrip()
+                # Only a sign-off tacked on after a sentence, not "You wear a jacket".
+                if before and before[-1] not in ".!?,;:-":
+                    continue
+                body = before
                 changed = True
                 break
     body = body.rstrip(" -,;:")
@@ -311,11 +321,14 @@ class OpenRouterViaGateway:
 
 
 class Meshling:
-    def __init__(self, cfg, llm=None):
+    def __init__(self, cfg, llm=None, weather=None):
         self.cfg = cfg
         self.persona = read_text("persona.txt")
         self.signoffs = read_lines("signoffs.txt")
         self.offline = read_lines("offline.txt")
+        self.facts = read_lines("facts.txt") if os.path.exists(
+            os.path.join(APP_DIR, "facts.txt")) else []
+        self.weather = weather or tools.Weather()
         os.makedirs(DATA_DIR, exist_ok=True)
         self.memory = Memory(os.path.join(DATA_DIR, "meshling.db"), cfg["notes_kept"])
         self.llm = llm or OpenRouterViaGateway(cfg)
@@ -361,16 +374,39 @@ class Meshling:
             return {"reply": fit(SAFETY_REPLY, "", self.cfg["max_len"]), "source": "safety"}
 
         signoff = random.choice(self.signoffs)
-        notes = self.memory.notes(sender)
         clean_text = to_ascii(text)[:400]
+        asked = strip_address(clean_text)
+
+        # Lookups answered from tables: no LLM, no free-model requests used.
+        out = self.lookup(asked, signoff)
+        if out:
+            self.memory.add(sender, short_note(text))
+            return out
+
+        notes = self.memory.notes(sender)
+        weather = "none"
+        wx = None
+        if tools.is_weather_ask(asked):
+            wx = self.weather.get()
+            weather = tools.weather_facts(wx) if wx else "unavailable"
+            log("weather:", weather)
+        fact = "none"
+        if wx is None and self.facts and random.random() < self.cfg["fact_chance"]:
+            fact = random.choice(self.facts)
         system = (self.persona
                   .replace("{sender}", sender)
                   .replace("{notes}", "; ".join(notes) if notes else "none")
                   .replace("{signoff}", signoff)
+                  .replace("{fact}", fact)
+                  .replace("{weather}", weather)
                   .replace("{text}", clean_text))
         budget = self.cfg["max_len"] - len(to_ascii(signoff)) - 1
         hint = (f" They asked you before about: {notes[-1]}. Bring that up."
-                if notes else "")
+                if notes and not wx else "")
+        if wx:
+            hint = " Give the real Hayward numbers from WEATHER, with F after the temperature."
+        elif fact != "none":
+            hint += " Work in the FACT."
         user = (f"{clean_text}\n\n(Reply in one or two short sentences, under "
                 f"{budget - 10} characters, then end with: {signoff}.{hint})")
         try:
@@ -381,11 +417,35 @@ class Meshling:
             raw = random.choice(self.offline)
             source = "offline"
         reply = fit(raw, signoff, self.cfg["max_len"], self.signoffs)
+        so = to_ascii(signoff)
+        body_only = reply[: -len(so)] if so and reply.endswith(so) else reply
+        if wx and (source != "llm" or not tools.mentions_numbers(body_only, wx)):
+            # The model was down or fumbled the numbers: the weather still goes out.
+            reply = fit(tools.weather_template(wx, asked, so), signoff,
+                        self.cfg["max_len"], self.signoffs)
+            source = "weather"
         if not reply or reply == fit("", signoff, self.cfg["max_len"]):
             reply = fit(random.choice(self.offline), signoff, self.cfg["max_len"], self.signoffs)
             source = "offline"
         self.memory.add(sender, short_note(text))
         return {"reply": reply, "source": source}
+
+    def lookup(self, asked, signoff):
+        """Help, Morse and ham lingo, answered from tables. None if not one of those."""
+        max_len = self.cfg["max_len"]
+        if tools.HELP_ASK.match(asked):
+            return {"reply": fit(tools.HELP_BODY, signoff, max_len, self.signoffs),
+                    "source": "lookup"}
+        payload = tools.morse_request(asked)
+        if payload:
+            reply = tools.morse_reply(payload, to_ascii(signoff), max_len)
+            if reply:
+                return {"reply": to_ascii(reply)[:max_len], "source": "lookup"}
+        term = tools.ham_request(asked)
+        if term:
+            return {"reply": fit(tools.ham_body(term), signoff, max_len, self.signoffs),
+                    "source": "lookup"}
+        return None
 
 # ---------------------------------------------------------------- HTTP
 
