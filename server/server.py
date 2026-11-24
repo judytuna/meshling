@@ -131,8 +131,11 @@ def fit(body, signoff, max_len, known_signoffs=()):
             core = s.rstrip(" .!")
             if core and b.lower().endswith(core.lower()):
                 before = b[: len(b) - len(core)].rstrip()
-                # Only a sign-off tacked on after a sentence, not "You wear a jacket".
-                if before and before[-1] not in ".!?,;:-":
+                # A short sign-off only counts after a sentence, not "You wear a
+                # jacket". A long or odd one ("Sent at 0.3 kbps, cherish it")
+                # can't be ordinary wording, so it comes off wherever it ends.
+                distinctive = len(core.split()) >= 4 or any(c.isdigit() for c in core)
+                if before and before[-1] not in ".!?,;:-" and not distinctive:
                     continue
                 body = before
                 changed = True

@@ -77,6 +77,10 @@ def main():
     assert out["source"] == "safety"
     check(out["reply"], cfg)
 
+    # a long sign-off the model already wrote is not doubled
+    so = "Sent at 0.3 kbps, cherish it"
+    assert server.fit("go drink water " + so, so, 140, [so]).count(so) == 1
+
     # rate limit
     cfg["per_sender_seconds"] = 30
     assert m.answer("fast", "#meshling", "meshling, a")["reply"]
