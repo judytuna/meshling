@@ -31,7 +31,7 @@ bridge at home only relays messages here and sends the reply back over the air.
 - Replies are plain ASCII, one line, at most 140 characters including the sign-off.
 - Always answers in `#meshling` and in DMs; on any other channel only when the text starts with `meshling,`.
 - Ignores senders whose name contains "bot", and itself.
-- One reply per sender per 30 seconds, 60 replies an hour in total.
+- No wait between replies to the same sender (set per_sender_seconds in config.json to add one); 60 replies an hour in total.
 - Messages that sound like someone in real trouble get a kind, out-of-character reply.
 
 The bridge should still space its own sends at least 15 seconds apart and never retry.

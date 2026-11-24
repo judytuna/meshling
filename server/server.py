@@ -47,7 +47,7 @@ DEFAULTS = {
     # Any OpenRouter model id. A small, cheap one is plenty for 140 characters.
     "model": "openai/gpt-4o-mini",
     "max_len": 140,
-    "per_sender_seconds": 30,   # one reply per sender per 30 s
+    "per_sender_seconds": 0,    # 0 = no per-sender wait (hourly cap still applies)
     "hourly_cap": 60,           # replies per hour, all senders together
     "notes_kept": 3,            # notes remembered per sender
     # Channels Meshling always answers in. DMs are always answered.
