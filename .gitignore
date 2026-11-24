@@ -1,0 +1,29 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+*.env
+.meshling.env
+
+# Server runtime data: shared key, key hashes, memory database
+data/
+server/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Radio settings exports and keys
+*.key
+*.pem
+*settings*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/

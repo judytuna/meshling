@@ -1,0 +1,4 @@
+{
+  "model": "google/gemma-4-31b-it:free",
+  "fallback_models": ["nvidia/nemotron-3.5-lightning:free", "openrouter/free"]
+}
