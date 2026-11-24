@@ -9,6 +9,8 @@ bridge at home only relays messages here and sends the reply back over the air.
 - `persona.txt`: the system prompt. `{sender}`, `{notes}`, `{signoff}` and `{text}` are filled in per message.
 - `signoffs.txt`: one sign-off per line; one is picked at random per reply and counted inside the cap.
 - `offline.txt`: in-character lines used when the LLM can't be reached, so the radio still gets an answer.
+- `tools.py`: real Hayward weather from Open-Meteo (cached 10 minutes), plus Morse, ham lingo and `help`, answered from tables without the LLM.
+- `facts.txt`: turkey, horse and truck lore. About 3 replies in 10 get one worked in (`fact_chance` in `config.json`).
 - `config.json`: overrides for `DEFAULTS` in `server.py`. Right now it picks free OpenRouter models: `model` first, then `fallback_models` when that one is rate-limited. Restart the service after editing.
 - `data/meshling.db`: SQLite, the last 3 notes per sender (that's the "they remember you" bit).
 - `data/secret`: the shared key the bridge sends as `X-Meshling-Key`.
@@ -18,7 +20,7 @@ bridge at home only relays messages here and sends the reply back over the air.
 
 `POST /message` with header `X-Meshling-Key` and JSON `{"sender", "channel", "text"}`.
 
-- Answer: `{"reply": "...", "source": "llm" | "offline" | "safety", "length": n}`. Send `reply` to the mesh.
+- Answer: `{"reply": "...", "source": "llm" | "offline" | "safety" | "lookup" | "weather", "length": n}`. Send `reply` to the mesh. `lookup` is Morse, ham lingo or help; `weather` is the plain weather line used when the model skips the numbers.
 - Quiet: `{"reply": null, "reason": "..."}`. Send nothing.
 
 `channel` is the channel name (`#meshling`), or `null` / `"dm"` for a direct message.

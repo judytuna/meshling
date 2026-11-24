@@ -14,6 +14,23 @@ Built for Fly.io Hacksgiving (Nov 23 to 29, 2026), aiming squarely
 at the Weird Uncle Award. It runs on a Fly.io Sprite and gets its LLM through the
 Sprites OpenRouter connector, so no API key lives on the Sprite.
 
+## Things to ask
+
+Anything goes, and you get advice you didn't ask for. A few things are actually useful:
+
+- `weather?` (or "will it rain tomorrow?", "do I need a jacket?"): real current
+  conditions and forecast for Hayward, CA from [Open-Meteo](https://open-meteo.com)
+  (free, no key), told by the uncle, jacket nagging included.
+- `morse SOS` or `what's thanksgiving in morse?`: text to Morse code. Send dots and
+  dashes (`morse ... --- ...`) to decode them.
+- `what's QRT`, `what does 73 mean?`, `define elmer`: Q-codes and ham radio lingo.
+- `help`: the short list.
+
+Morse, ham lingo and help come from built-in tables and never call the model, so they
+don't use up free-model requests. Ask about turkey and Meshling will insist, with total
+confidence, that tryptophan is why you're sleepy. Turkey, horse and pickup truck facts
+also turn up when nobody asked.
+
 ## How it works
 
 ```
@@ -47,6 +64,10 @@ Sprites OpenRouter connector, so no API key lives on the Sprite.
 5. The reply is squeezed into one 140-character ASCII line and the bridge posts it back
    to the channel.
 
+Weather questions get real numbers from Open-Meteo, which go into the prompt. If the
+model leaves the numbers out or can't be reached, a plain in-character weather line goes
+out instead. If the weather service is down, Meshling says their weather radio is static.
+
 If the model can't be reached, Meshling still answers with an in-character line from
 `offline.txt`. Messages that sound like someone in real trouble get a kind,
 out-of-character reply instead of the bit.
@@ -56,6 +77,8 @@ out-of-character reply instead of the bit.
 - `server/`: the agent. Python standard library only. See [server/README.md](server/README.md) for the API and rules.
   - `server.py`: the HTTP service (`POST /message`, `GET /health`).
   - `persona.txt`: the system prompt. This is where the weirdness lives.
+  - `tools.py`: weather, Morse, ham lingo and help.
+  - `facts.txt`: turkey, horse and truck lore, one sometimes worked into a reply.
   - `signoffs.txt`, `offline.txt`: sign-offs and fallback lines.
   - `config.json`: model choice and fallbacks.
   - `test_meshling.py`: offline checks, no network needed.
@@ -64,7 +87,8 @@ out-of-character reply instead of the bit.
 
 ## Run the server on a Sprite
 
-1. Create a Sprite and copy `server/` to `/app` on it.
+1. Create a Sprite and copy `server/` to `/app` on it. It needs outbound HTTPS to
+   `api.open-meteo.com` for weather (a Sprite with no network rules has it).
 2. In Fly.io, add an OpenRouter connector and allow this Sprite to use it. The server
    finds the connector by itself through the Sprites gateway; there is no key to set.
 3. Run the checks: `cd /app && python3 test_meshling.py`.
