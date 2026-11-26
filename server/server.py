@@ -46,7 +46,7 @@ DEFAULTS = {
     "port": 8080,
     # Any OpenRouter model id. A small, cheap one is plenty for 140 characters.
     "model": "openai/gpt-4o-mini",
-    "max_len": 140,
+    "max_len": 330,          # the bridge splits this into up to 3 radio messages
     "per_sender_seconds": 0,    # 0 = no per-sender wait (hourly cap still applies)
     "hourly_cap": 60,           # replies per hour, all senders together
     "notes_kept": 3,            # notes remembered per sender
@@ -56,7 +56,7 @@ DEFAULTS = {
     "gateway_list_url": "https://api.sprites.dev/v1/gateway/list",
     "llm_timeout": 25,
     "temperature": 0.9,
-    "max_tokens": 90,
+    "max_tokens": 220,
     "fact_chance": 0.3,         # how often a turkey/horse/truck fact is worked in
 }
 
@@ -412,7 +412,7 @@ class Meshling:
                     " jacket or umbrella.")
         elif fact != "none":
             hint += " Work in the FACT."
-        user = (f"{clean_text}\n\n(Reply in one or two short sentences, under "
+        user = (f"{clean_text}\n\n(Ramble like an uncle in three to five sentences, under "
                 f"{budget - 10} characters, then end with: {signoff}.{hint})")
         try:
             raw = self.llm.complete(system, user)

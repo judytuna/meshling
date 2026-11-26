@@ -18,9 +18,14 @@ Settings come from environment variables (nothing secret is written to disk):
   MESHLING_CHANNEL_SECRET  32 hex characters, only for a private channel whose name
                            does not start with "#"
   MESHLING_ALLOW_DMS       "1" to also answer direct messages (default: channel only)
-  MESHLING_MAX_CHARS       reply length cap (default 140)
+  MESHLING_MAX_CHARS       characters per radio message, numbering included (default 120;
+                           MeshCore allows about 133 with the node name in front)
+  MESHLING_MAX_PARTS       most messages one long reply is split into (default 3)
+  MESHLING_PART_GAP        seconds between the parts of one reply (default 5, never lower than 3)
   MESHLING_SEND_GAP        seconds between sends (default 15, never lower than 15)
   MESHLING_HTTP_TIMEOUT    seconds to wait for the agent (default 30)
+  MESHLING_REPLY_DELAY     least seconds between hearing a message and answering it,
+                           so the reply shows after it on other radios (default 6)
 
 Usage:
 
@@ -46,7 +51,8 @@ import urllib.error
 import urllib.request
 
 DEFAULT_URL = "https://YOUR-SPRITE.sprites.app/message"   # placeholder: set MESHLING_URL
-MIN_SEND_GAP = 15.0
+MIN_SEND_GAP = 15.0          # between separate replies
+MIN_PART_GAP = 3.0           # between the parts of one reply
 STALE_AFTER = 180.0          # drop messages that waited longer than this
 WATCHDOG_EVERY = 120.0       # seconds between "is the radio still there?" checks
 MAX_CHANNEL_SLOTS = 40
@@ -79,6 +85,29 @@ def cap(text, limit):
     cut = text[:limit]
     space = cut.rfind(" ")
     return (cut[:space] if space > limit * 0.6 else cut).rstrip()
+
+
+def split_parts(text, limit, max_parts):
+    """Split a long reply into at most max_parts radio messages of <= limit
+    characters each, numbered "1/3" when there is more than one."""
+    if len(text) <= limit or max_parts <= 1:
+        return [cap(text, limit)]
+    room = limit - 4                         # space for " 1/3"
+    words, parts, cur = text.split(" "), [], ""
+    for w in words:
+        w = w[:room]
+        if cur and len(cur) + 1 + len(w) > room:
+            parts.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}" if cur else w
+    if cur:
+        parts.append(cur)
+    if len(parts) > max_parts:
+        parts = parts[:max_parts]
+        parts[-1] = cap(parts[-1], room)
+    n = len(parts)
+    return [f"{p} {i}/{n}" for i, p in enumerate(parts, 1)] if n > 1 else parts
 
 
 def split_channel_text(text):
@@ -238,8 +267,11 @@ class Bridge:
         self.agent = agent
         self.channel = env("MESHLING_CHANNEL", "#meshling")
         self.allow_dms = env("MESHLING_ALLOW_DMS") == "1"
-        self.max_chars = int(env("MESHLING_MAX_CHARS", "140"))
+        self.max_chars = int(env("MESHLING_MAX_CHARS", "120"))
+        self.max_parts = max(1, int(env("MESHLING_MAX_PARTS", "3")))
+        self.part_gap = max(MIN_PART_GAP, float(env("MESHLING_PART_GAP", "5")))
         self.gap = max(MIN_SEND_GAP, float(env("MESHLING_SEND_GAP", "15")))
+        self.reply_delay = max(0.0, float(env("MESHLING_REPLY_DELAY", "6")))
         self.queue = asyncio.Queue(maxsize=20)
         self.last_send = 0.0
         self.mc = None
@@ -300,21 +332,27 @@ class Bridge:
         reply = await asyncio.to_thread(self.agent.ask, item["sender"], channel, item["text"])
         if not reply:
             return
-        reply = cap(to_ascii(reply), self.max_chars)
+        reply = to_ascii(reply)
         if not reply:
             return
-        wait = self.last_send + self.gap - time.time()
+        parts = split_parts(reply, self.max_chars, self.max_parts)
+        # never answer sooner than reply_delay after the message arrived, so the
+        # reply sorts after it even when the sender's clock runs a bit ahead
+        wait = max(self.last_send + self.gap, item["at"] + self.reply_delay) - time.time()
         if wait > 0:
             await asyncio.sleep(wait)
-        if self.mc is None or not self.mc.is_connected:
-            log("radio not connected; reply dropped")
-            return
-        if item["kind"] == "chan":
-            ev = await self.mc.commands.send_chan_msg(self.chan_idx, reply)
-        else:
-            ev = await self.mc.commands.send_msg(item["prefix"], reply)
-        self.last_send = time.time()
-        log(f"-> [{channel}] {reply}  ({ev.type.name if ev else 'no answer'})")
+        for i, part in enumerate(parts):
+            if i:
+                await asyncio.sleep(self.part_gap)
+            if self.mc is None or not self.mc.is_connected:
+                log("radio not connected; rest of reply dropped")
+                return
+            if item["kind"] == "chan":
+                ev = await self.mc.commands.send_chan_msg(self.chan_idx, part)
+            else:
+                ev = await self.mc.commands.send_msg(item["prefix"], part)
+            self.last_send = time.time()
+            log(f"-> [{channel}] {part}  ({ev.type.name if ev else 'no answer'})")
 
     # -- connection lifecycle
     async def watchdog(self):
@@ -325,6 +363,7 @@ class Bridge:
             try:
                 ev = await asyncio.wait_for(self.mc.commands.get_bat(), 15)
                 misses = 0 if ev and ev.type != EventType.ERROR else misses + 1
+                await asyncio.wait_for(self.mc.commands.set_time(int(time.time())), 15)
             except Exception:
                 misses += 1
             if misses >= 2:

@@ -7,7 +7,7 @@ Post in the `#meshling` channel from any MeshCore radio and a genderless aunt-or
 answers: a few words on what you asked, then life advice you didn't ask for, usually
 a story about Fortran punch cards, Ohio State, a roommate's horse in Hayward or a blue
 and white pickup. They call you "kiddo", say "aiyah", love John Denver, and remember
-the last few things you asked them. Every reply is plain ASCII and fits in 140
+the last few things you asked them. Every reply is plain ASCII, up to about 330
 characters, because every byte goes over the air.
 
 Built for Fly.io Hacksgiving (Nov 23 to 29, 2026), aiming squarely
@@ -52,7 +52,7 @@ also turn up when nobody asked.
           │                                     free OpenRouter model
           │                                                   │
           └──────────── reply posted back to #meshling ◀──────┘
-                        (one line, ASCII, <= 140 chars)
+                        (one line, ASCII, <= 330 chars)
 ```
 
 1. Someone posts in `#meshling` from a MeshCore radio.
@@ -61,7 +61,7 @@ also turn up when nobody asked.
 3. The bridge POSTs `{"sender", "channel", "text"}` to the Sprite.
 4. The server builds the prompt from `persona.txt`, the sender's last few notes and a
    random sign-off, and asks the model through the OpenRouter connector.
-5. The reply is squeezed into one 140-character ASCII line and the bridge posts it back
+5. The reply is squeezed into one ASCII line of up to 330 characters, and the bridge splits it into up to 3 numbered radio messages, 5 seconds apart, and posts them back
    to the channel.
 
 Weather questions get real numbers from Open-Meteo, which go into the prompt. If the
@@ -129,9 +129,12 @@ Bridge settings (names only; see `.env.example`):
 - `MESHLING_CHANNEL`: channel name, default `#meshling`.
 - `MESHLING_CHANNEL_SECRET`: only for a private channel whose name doesn't start with `#`.
 - `MESHLING_ALLOW_DMS`: `1` to answer direct messages too (default: channel only).
-- `MESHLING_MAX_CHARS`: reply cap, default 140.
+- `MESHLING_MAX_CHARS`: characters per radio message, numbering included, default 120 (MeshCore allows about 133 with the node name in front).
+- `MESHLING_MAX_PARTS`: most messages one reply is split into, default 3.
+- `MESHLING_PART_GAP`: seconds between the parts of one reply, default 5 (at least 3).
 - `MESHLING_SEND_GAP`: seconds between sends, default 15 and never lower.
 - `MESHLING_HTTP_TIMEOUT`: seconds to wait for the agent, default 30.
+- `MESHLING_REPLY_DELAY`: least seconds between hearing a message and answering, default 6, so replies show after the message they answer.
 
 The bridge is polite to the mesh: it only answers in its own channel, waits at least 15
 seconds between sends, never retries, drops messages older than three minutes and
